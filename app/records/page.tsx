@@ -65,18 +65,12 @@ function RecordsView() {
     setShown((prev) => (prev.includes(line) ? prev.filter((l) => l !== line) : [...prev, line]));
   }
 
-  // ["deadline","deadline","exam"] → "시험:1;과제:2" (top_tags 와 같은 모양)
-  function eventsLabel(events: string[]) {
-    return EVENT_KINDS.map((k) => [k.label, events.filter((e) => e === k.key).length] as const)
-      .filter(([, n]) => n > 0)
-      .map(([label, n]) => `${label}:${n}`)
-      .join(";");
-  }
-
   function downloadCsv() {
-    const head = "day,grade,score,participants,events,top_tags,is_sample";
+    // 일정은 종류마다 칸을 나눠 그날 건수를 적는다 (시험, 과제, … 칸)
+    const head = ["day", "grade", "score", "participants", ...EVENT_KINDS.map((k) => k.label), "top_tags", "is_sample"].join(",");
     const body = rows.map((r) =>
-      [r.day, r.grade, r.score ?? "", r.participants ?? "", eventsLabel(r.events),
+      [r.day, r.grade, r.score ?? "", r.participants ?? "",
+        ...EVENT_KINDS.map((k) => r.events.filter((e) => e === k.key).length),
         r.topTags.map((t) => `${t.tag}:${t.count}`).join(";"), r.isSample].join(","),
     );
     const blob = new Blob(["﻿" + [head, ...body].join("\n")], { type: "text/csv;charset=utf-8" });

@@ -44,16 +44,19 @@ def load(path):
                 "day": dt.date.fromisoformat(r["day"]),
                 "grade": r["grade"],
                 "score": float(r["score"]) if r["score"] else None,
-                "events": parse_events(r["events"]),
+                "events": parse_events(r),
             })
     return sorted(rows, key=lambda r: (r["day"], r["grade"]))
 
 
-def parse_events(text):
-    """"시험:1;과제:2" → ["exam", "deadline", "deadline"]. 예전 형식 "deadline;deadline" 도 읽는다."""
+def parse_events(r):
+    """종류별 칸(시험, 과제, …의 건수) → ["exam", "deadline", "deadline"].
+    예전 CSV 의 events 칸("deadline;deadline" 또는 "과제:2")도 읽는다."""
+    if "events" not in r:
+        return [k for k, label in KIND_LABEL.items() for _ in range(int(r.get(label) or 0))]
     by_label = {v: k for k, v in KIND_LABEL.items()}
     kinds = []
-    for part in filter(None, text.split(";")):
+    for part in filter(None, r["events"].split(";")):
         name, _, n = part.partition(":")
         kinds += [by_label.get(name, name)] * (int(n) if n else 1)
     return kinds

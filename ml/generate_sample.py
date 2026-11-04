@@ -228,19 +228,15 @@ def to_sql(events, rows):
 KIND_LABEL = {"exam": "시험", "deadline": "과제", "presentation": "발표", "room": "강의실", "event": "학과 행사", "etc": "기타"}
 
 
-def events_label(kinds):
-    """["deadline", "deadline", "exam"] → "시험:1;과제:2" (관측 기록 화면의 CSV 와 같은 모양)"""
-    return ";".join(f"{label}:{kinds.count(k)}" for k, label in KIND_LABEL.items() if k in kinds)
-
-
 def to_csv(rows, path, today):
+    # 관측 기록 화면의 CSV 와 같은 모양: 일정은 종류마다 칸을 나눠 그날 건수를 적는다
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["day", "grade", "score", "participants", "events", "top_tags", "is_sample"])
+        w.writerow(["day", "grade", "score", "participants", *KIND_LABEL.values(), "top_tags", "is_sample"])
         for r in rows:
             w.writerow([(today + dt.timedelta(days=r["offset"])).isoformat(), r["grade"], "" if r["score"] is None else r["score"],
-                        "" if r["participants"] is None else r["participants"], events_label(r["events"]),
+                        "" if r["participants"] is None else r["participants"], *(r["events"].count(k) for k in KIND_LABEL),
                         ";".join(f"{t}:{c}" for t, c in r["top_tags"]), "true"])
 
 
