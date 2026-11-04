@@ -44,9 +44,19 @@ def load(path):
                 "day": dt.date.fromisoformat(r["day"]),
                 "grade": r["grade"],
                 "score": float(r["score"]) if r["score"] else None,
-                "events": [k for k in r["events"].split(";") if k],
+                "events": parse_events(r["events"]),
             })
     return sorted(rows, key=lambda r: (r["day"], r["grade"]))
+
+
+def parse_events(text):
+    """"시험:1;과제:2" → ["exam", "deadline", "deadline"]. 예전 형식 "deadline;deadline" 도 읽는다."""
+    by_label = {v: k for k, v in KIND_LABEL.items()}
+    kinds = []
+    for part in filter(None, text.split(";")):
+        name, _, n = part.partition(":")
+        kinds += [by_label.get(name, name)] * (int(n) if n else 1)
+    return kinds
 
 
 def mean(xs, default=None):
