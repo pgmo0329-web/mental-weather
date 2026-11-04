@@ -10,10 +10,10 @@ import {
   alertCommentsStore, eventsStore, isOnline, postsStore, statsStore, useStore, type LiveStats,
 } from "@/lib/data";
 import { getSavedGrade, getTodayVote } from "@/lib/local";
-import { TODAY_ALERTS, TODAY_FORECASTS } from "@/lib/mock";
+import { CATEGORY_LABEL, TODAY_ALERTS, TODAY_FORECAST } from "@/lib/mock";
+import { keyToDate, useTodayKey } from "@/lib/useToday";
 import {
-  addDays, dateKey, GRADES, kindInfo, MIN_SAMPLE, pseudoWeather, scoreToWeather, SLOTS, timeAgo, weatherEmoji,
-  type SlotKey,
+  addDays, dateKey, GRADES, kindInfo, MIN_SAMPLE, scoreToWeather, timeAgo, weatherEmoji,
 } from "@/lib/weather";
 import SampleBadge from "@/components/SampleBadge";
 
@@ -40,12 +40,11 @@ type View = {
   caster: string;
 };
 
-function mockView(slot: SlotKey): View {
-  const f = TODAY_FORECASTS.find((x) => x.slot === slot)!;
-  const s = SLOTS.find((x) => x.key === slot)!;
+function mockView(): View {
+  const f = TODAY_FORECAST;
   return {
-    label: `${s.label} 예보`,
-    badge: s.time,
+    label: "예시 예보",
+    badge: "예시 데이터",
     score: f.overallScore,
     participants: f.participants,
     byGrade: f.byGrade.map((g) => ({ grade: g.grade, score: g.count < MIN_SAMPLE ? null : g.score })),
@@ -66,13 +65,6 @@ function liveView(stats: LiveStats | null): View {
   };
 }
 
-function currentSlot(): SlotKey {
-  const h = new Date().getHours();
-  if (h < 12) return "morning";
-  if (h < 18) return "noon";
-  return "evening";
-}
-
 function dDay(date: string, today: Date) {
   const [y, m, d] = date.split("-").map(Number);
   const diff = Math.round((new Date(y, m - 1, d).getTime() - today.getTime()) / 86400000);
@@ -90,20 +82,15 @@ export default function TodayPage() {
 }
 
 function TodayView() {
-  const [slot, setSlot] = useState<SlotKey>(currentSlot);
   const [voted] = useState(() => getTodayVote() !== null);
   const [myGrade] = useState(getSavedGrade);
-  const [today] = useState(() => {
-    const t = new Date();
-    t.setHours(0, 0, 0, 0);
-    return t;
-  });
+  const today = keyToDate(useTodayKey());
   const events = useStore(eventsStore);
   const posts = useStore(postsStore);
   const alertComments = useStore(alertCommentsStore);
   const stats = useStore(statsStore);
 
-  const view = isOnline ? liveView(stats) : mockView(slot);
+  const view = isOnline ? liveView(stats) : mockView();
   const w = view.score === null ? PENDING : scoreToWeather(view.score);
   // 특보 자동 발표는 4단계. 그 전까지 DB 모드에서는 예시 특보를 보여주지 않는다
   const alerts = isOnline ? [] : TODAY_ALERTS;
@@ -135,21 +122,6 @@ function TodayView() {
                 )}
                 {view.badge}
               </p>
-              {isOnline ? (
-                <p className="hidden text-xs text-white/80 sm:block">정규 예보 08 · 12 · 18시 (준비 중)</p>
-              ) : (
-                <div className="flex rounded-full bg-white/20 p-1 text-sm">
-                  {SLOTS.map((s) => (
-                    <button
-                      key={s.key}
-                      onClick={() => setSlot(s.key)}
-                      className={`rounded-full px-2.5 py-1 ${slot === s.key ? "bg-white font-semibold text-text" : "text-white/80"}`}
-                    >
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
 
             <div className="relative mt-6 flex items-center gap-4">
@@ -243,7 +215,7 @@ function TodayView() {
                   <li key={e.id} className="flex items-center gap-3 py-3">
                     <span className="w-6 shrink-0 text-center text-lg">{kindInfo(e.kind).icon}</span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium">{e.title}<SampleBadge id={e.id} /></p>
+                      <p className="truncate font-medium">{e.title}<SampleBadge show={e.isSample} /></p>
                       <p className="truncate text-xs text-muted">
                         {[kindInfo(e.kind).label, e.time, e.place].filter(Boolean).join(" · ")}
                       </p>
@@ -256,17 +228,22 @@ function TodayView() {
           </Card>
 
           <Card title="현장 제보" more={{ href: "/board", label: "더보기" }}>
+            {latestPosts.length === 0 && (
+              <p className="py-4 text-center text-sm text-muted">아직 올라온 제보가 없어요</p>
+            )}
             <ul className="divide-y divide-line">
               {latestPosts.map((p) => (
                 <li key={p.id}>
-                  <Link href="/board" className="block py-3">
+                  <Link href={`/board?post=${p.id}`} className="block py-3">
                     <p className="truncate font-medium">
-                      <span className="mr-1.5 text-xs font-semibold text-accent">{p.category}</span>
+                      <span className="mr-1.5 text-xs font-semibold text-accent">
+                        {CATEGORY_LABEL[p.category].icon} {CATEGORY_LABEL[p.category].label}
+                      </span>
                       {p.title}
-                      <SampleBadge id={p.id} />
+                      <SampleBadge show={p.isSample} />
                     </p>
                     <p className="mt-0.5 text-xs text-muted">
-                      {weatherEmoji(p.weather ?? pseudoWeather(p.id))} {p.nickname} · {timeAgo(p.createdAt)} · 댓글 {p.comments.length}
+                      {weatherEmoji(p.weather)} {p.nickname} · {timeAgo(p.createdAt)} · 댓글 {p.comments.length}
                     </p>
                   </Link>
                 </li>

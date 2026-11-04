@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
+import ClientOnly from "@/components/ClientOnly";
 import Nav from "@/components/Nav";
+import Toast from "@/components/Toast";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -27,6 +29,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <Nav />
         </Suspense>
         <main className="mx-auto max-w-md px-4 pb-28 pt-5 md:max-w-6xl md:px-8 md:pb-16 md:pt-24">{children}</main>
+        <ClientOnly>
+          <Toast />
+        </ClientOnly>
       </body>
     </html>
   );

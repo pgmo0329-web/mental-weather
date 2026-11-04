@@ -1,10 +1,9 @@
-// 1단계 프로토타입용 가짜 데이터. 2단계에서 Supabase로 교체한다.
-import { addDays, dateKey, type EventKind, type Grade, type SlotKey, type WeatherKey } from "./weather";
+// DB 연결 없이 실행할 때 쓰는 예시 데이터와 공용 타입. 예시 데이터는 화면에 '샘플'로 표시된다.
+import { addDays, dateKey, GRADES, type EventKind, type Grade, type WeatherKey } from "./weather";
 
 export type GradeStat = { grade: Grade; score: number; count: number };
 
 export type Forecast = {
-  slot: SlotKey;
   overallScore: number;
   participants: number;
   byGrade: GradeStat[];
@@ -20,6 +19,7 @@ export type AlertComment = {
   body: string;
   createdAt: number;
   reports: number;
+  isSample?: boolean;
 };
 
 export type Alert = {
@@ -40,12 +40,23 @@ export type CalEvent = {
   grades: Grade[]; // 비어 있으면 전체 학년
   time?: string;
   place?: string;
+  isSample?: boolean;
 };
 
 export const POST_CATEGORIES = ["정보", "질문", "잡담", "분실물"] as const;
 export type PostCategory = (typeof POST_CATEGORIES)[number];
 
-export type PostComment = { id: string; nickname: string; body: string; createdAt: number; weather?: WeatherKey };
+export type PostComment = {
+  id: string; nickname: string; body: string; createdAt: number; weather?: WeatherKey; isSample?: boolean;
+};
+
+// 저장되는 값은 그대로 두고 화면에서만 날씨 말투로 보여준다
+export const CATEGORY_LABEL: Record<PostCategory, { icon: string; label: string }> = {
+  정보: { icon: "📡", label: "관측 정보" },
+  질문: { icon: "🆘", label: "구조 요청" },
+  잡담: { icon: "☁️", label: "수다 구름" },
+  분실물: { icon: "🧳", label: "분실물 수배" },
+};
 
 export type Post = {
   id: string;
@@ -58,73 +69,29 @@ export type Post = {
   createdAt: number;
   likes: number;
   comments: PostComment[];
+  isSample?: boolean;
 };
 
-export const TODAY_FORECASTS: Forecast[] = [
-  {
-    slot: "morning",
-    overallScore: 58,
-    participants: 41,
-    byGrade: [
-      { grade: "1학년", score: 74, count: 12 },
-      { grade: "2학년", score: 61, count: 10 },
-      { grade: "3학년", score: 38, count: 13 },
-      { grade: "4학년", score: 55, count: 4 },
-      { grade: "초과학기", score: 50, count: 2 },
-    ],
-    topTags: [
-      { tag: "수면부족", count: 19 },
-      { tag: "과제", count: 15 },
-      { tag: "통학", count: 9 },
-      { tag: "시험", count: 6 },
-      { tag: "그냥", count: 4 },
-    ],
-    casterComment:
-      "좋은 아침입니다. 현재 학부 상공에는 수면부족 저기압이 넓게 자리 잡고 있습니다. 1교시 강의실 부근은 눈꺼풀 낙하 확률 80%이니, 외출 시 아메리카노를 꼭 챙기시기 바랍니다.",
-  },
-  {
-    slot: "noon",
-    overallScore: 47,
-    participants: 87,
-    byGrade: [
-      { grade: "1학년", score: 70, count: 24 },
-      { grade: "2학년", score: 52, count: 21 },
-      { grade: "3학년", score: 24, count: 27 },
-      { grade: "4학년", score: 45, count: 11 },
-      { grade: "초과학기", score: 38, count: 4 },
-    ],
-    topTags: [
-      { tag: "과제", count: 41 },
-      { tag: "수면부족", count: 30 },
-      { tag: "팀플", count: 17 },
-      { tag: "시험", count: 12 },
-      { tag: "술병", count: 8 },
-    ],
-    casterComment:
-      "점심 예보입니다. 3학년 지역에서 운영체제 과제 전선이 빠르게 북상 중입니다. 학식 줄은 평소보다 길겠으나 돈까스 출현 소식에 체감 멘탈은 소폭 상승하겠습니다. 데드락에 걸리지 않도록 서로 자원을 양보하세요.",
-  },
-  {
-    slot: "evening",
-    overallScore: 41,
-    participants: 132,
-    byGrade: [
-      { grade: "1학년", score: 66, count: 35 },
-      { grade: "2학년", score: 47, count: 30 },
-      { grade: "3학년", score: 18, count: 41 },
-      { grade: "4학년", score: 40, count: 19 },
-      { grade: "초과학기", score: 32, count: 7 },
-    ],
-    topTags: [
-      { tag: "과제", count: 63 },
-      { tag: "수면부족", count: 44 },
-      { tag: "팀플", count: 25 },
-      { tag: "코딩에러", count: 21 },
-      { tag: "술병", count: 11 },
-    ],
-    casterComment:
-      "저녁 예보 전해드립니다. 오늘 밤 실습실 일대에는 '마감 전야' 현상으로 국지적 밤샘이 예상됩니다. 세그멘테이션 폴트 소나기가 곳곳에 내리겠으니, 커밋은 자주, 푸시는 확실하게 해두시기 바랍니다.",
-  },
-];
+export const TODAY_FORECAST: Forecast = {
+  overallScore: 45,
+  participants: 132,
+  byGrade: [
+    { grade: "1학년", score: 65, count: 35 },
+    { grade: "2학년", score: 45, count: 30 },
+    { grade: "3학년", score: 20, count: 41 },
+    { grade: "4학년", score: 40, count: 19 },
+    { grade: "초과학기", score: 30, count: 7 },
+  ],
+  topTags: [
+    { tag: "과제", count: 63 },
+    { tag: "수면부족", count: 44 },
+    { tag: "팀플", count: 25 },
+    { tag: "코딩에러", count: 21 },
+    { tag: "술병", count: 11 },
+  ],
+  casterComment:
+    "오늘 밤 실습실 일대에는 '마감 전야' 현상으로 국지적 밤샘이 예상됩니다. 세그멘테이션 폴트 소나기가 곳곳에 내리겠으니, 커밋은 자주, 푸시는 확실하게 해두시기 바랍니다.",
+};
 
 export const TODAY_ALERTS: Alert[] = [
   {
@@ -149,13 +116,29 @@ export const TODAY_ALERTS: Alert[] = [
   },
 ];
 
-// 지난 날의 실제 날씨 (오늘 기준 -3 ~ -1)
-export function pastScores(today: Date): Record<string, number> {
-  return {
-    [dateKey(addDays(today, -3))]: 72,
-    [dateKey(addDays(today, -2))]: 64,
-    [dateKey(addDays(today, -1))]: 51,
-  };
+export type DailyRow = {
+  day: string;
+  grade: Grade | "전체";
+  score: number | null;
+  participants: number | null;
+  topTags: { tag: string; count: number }[];
+  events: EventKind[];
+  isSample: boolean;
+};
+
+// 예시 모드의 지난 기록. 학년마다 기본 점수가 다르고 날마다 조금씩 흔들린다
+export function mockDaily(today: Date, days = 42): DailyRow[] {
+  const base: Record<string, number> = { 전체: 58, "1학년": 72, "2학년": 62, "3학년": 50, "4학년": 56, 초과학기: 58 };
+  const rows: DailyRow[] = [];
+  for (let i = days; i >= 1; i--) {
+    const day = dateKey(addDays(today, -i));
+    for (const grade of ["전체", ...GRADES] as const) {
+      const wave = Math.round(Math.sin(i * 1.7 + grade.length) * 12);
+      const score = Math.max(0, Math.min(100, Math.round((base[grade] + wave) / 5) * 5));
+      rows.push({ day, grade, score, participants: 12 + ((i * 7) % 20), topTags: [], events: [], isSample: true });
+    }
+  }
+  return rows;
 }
 
 export function initialEvents(today: Date): CalEvent[] {

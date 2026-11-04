@@ -7,8 +7,9 @@ const MAIN = [
   { href: "/", label: "오늘 예보", icon: "📺" },
   { href: "/calendar", label: "예보 달력", icon: "📅" },
   { href: "/board", label: "현장 제보", icon: "📡" },
+  { href: "/records", label: "관측 기록", icon: "📊" },
 ];
-const MOBILE = [...MAIN.slice(0, 2), { href: "/vote", label: "내 날씨", icon: "✋" }, MAIN[2]];
+const MOBILE = [...MAIN.slice(0, 2), { href: "/vote", label: "내 날씨", icon: "✋" }, ...MAIN.slice(2)];
 
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/" || pathname.startsWith("/alerts");

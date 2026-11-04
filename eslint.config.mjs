@@ -7,6 +7,8 @@ const eslintConfig = defineConfig([
   ...nextTs,
   // Override default ignores of eslint-config-next.
   globalIgnores([
+    // 머신러닝용 파이썬 가상환경
+    "ml/.venv/**",
     // Default ignores of eslint-config-next:
     ".next/**",
     "out/**",

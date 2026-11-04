@@ -40,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 머신러닝 가상환경
+ml/.venv/
+__pycache__/

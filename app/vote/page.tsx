@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import ClientOnly from "@/components/ClientOnly";
-import { submitVote } from "@/lib/data";
+import { showToast, submitVote } from "@/lib/data";
 import Header from "@/components/Header";
 import { clearTodayVote, getTodayVote, saveVote, stormStreak, type MyVote } from "@/lib/local";
 import { dateKey, GRADES, TAGS, WEATHERS, type Grade, type WeatherKey } from "@/lib/weather";
@@ -24,16 +24,21 @@ function VoteView() {
   const [grade, setGrade] = useState<Grade | null>(null);
   const [tags, setTags] = useState<string[]>([]);
   const [streak, setStreak] = useState(stormStreak);
+  const [sending, setSending] = useState(false);
 
   function toggleTag(tag: string) {
     setTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
   }
 
-  function submit() {
-    if (!weather || !grade) return;
+  async function submit() {
+    if (!weather || !grade || sending) return;
+    setSending(true);
+    const result = await submitVote({ weather, grade, tags });
+    setSending(false);
+    if (result === "error") return; // 알림은 submitVote 가 띄운다
+    if (result === "duplicate") showToast("오늘은 이 기기에서 이미 제보했어요. 내일 다시 알려주세요!");
     const vote = { date: dateKey(new Date()), weather, grade, tags };
     saveVote(vote);
-    submitVote(vote);
     setMyVote(vote);
     setStreak(stormStreak());
   }
@@ -150,10 +155,10 @@ function VoteView() {
 
       <button
         onClick={submit}
-        disabled={!weather || !grade}
+        disabled={!weather || !grade || sending}
         className="w-full rounded-xl bg-accent py-3.5 font-semibold text-white disabled:opacity-30"
       >
-        제보하기
+        {sending ? "전송 중…" : "제보하기"}
       </button>
     </>
   );

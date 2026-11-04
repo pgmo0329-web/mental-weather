@@ -5,29 +5,26 @@ import { useState } from "react";
 import ClientOnly from "@/components/ClientOnly";
 import Header from "@/components/Header";
 import Sheet from "@/components/Sheet";
-import { addPostComment, createPost, postsStore, sendSunshine, useStore } from "@/lib/data";
-import { getSavedGrade, getTodayVote } from "@/lib/local";
-import { POST_CATEGORIES, type Post, type PostCategory } from "@/lib/mock";
-import {
-  GRADES, pseudoWeather, randomNickname, scoreToWeather, timeAgo, weatherEmoji, weatherOf, type Grade,
-} from "@/lib/weather";
 import SampleBadge from "@/components/SampleBadge";
+import {
+  addPostComment, createPost, postsStore, sendSunshine, showToast, threadNickname, useStore,
+} from "@/lib/data";
+import { getSavedGrade, getTodayVote } from "@/lib/local";
+import { CATEGORY_LABEL, POST_CATEGORIES, type Post, type PostCategory } from "@/lib/mock";
+import { displayNickname } from "@/lib/nickname";
+import { GRADES, scoreToWeather, timeAgo, weatherEmoji, weatherOf, weatherOrNone, type Grade } from "@/lib/weather";
 
 const TITLE_MAX = 60;
 const BODY_MAX = 1000;
 const COMMENT_MAX = 200;
 const HOT_LIKES = 20;
 
-// 저장되는 값은 그대로 두고 화면에서만 날씨 말투로 보여준다
-const CATEGORY_LABEL: Record<PostCategory, { icon: string; label: string }> = {
-  정보: { icon: "📡", label: "관측 정보" },
-  질문: { icon: "🆘", label: "구조 요청" },
-  잡담: { icon: "☁️", label: "수다 구름" },
-  분실물: { icon: "🧳", label: "분실물 수배" },
-};
-
 function postWeather(p: Post) {
-  return weatherOf(p.weather ?? pseudoWeather(p.id));
+  return weatherOrNone(p.weather);
+}
+
+function author(p: Post) {
+  return p.grade ? `${p.grade} ${p.nickname}` : p.nickname;
 }
 
 export default function BoardPage() {
@@ -45,7 +42,8 @@ function BoardView() {
   const [myGrade] = useState(getSavedGrade);
   const [myWeather] = useState(() => getTodayVote()?.weather);
   const [category, setCategory] = useState<PostCategory | "전체">("전체");
-  const [openId, setOpenId] = useState<string | null>(null);
+  // 홈 화면에서 글을 눌러 들어오면 그 글을 바로 연다
+  const [openId, setOpenId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("post"));
   const [writing, setWriting] = useState(false);
   const [sunned, setSunned] = useState<string[]>([]);
   const [draft, setDraft] = useState({ category: "정보" as PostCategory, title: "", body: "", grade: myGrade });
@@ -57,20 +55,20 @@ function BoardView() {
     .sort((a, b) => b.createdAt - a.createdAt);
   const open = posts.find((p) => p.id === openId);
 
-  // 최근 24시간 제보자들의 날씨 평균 = 지금 현장 분위기
-  const recent = posts.filter((p) => now - p.createdAt < 24 * 60 * 60000);
-  const mood = recent.length
-    ? scoreToWeather(recent.reduce((sum, p) => sum + postWeather(p).score, 0) / recent.length)
-    : null;
+  // 최근 24시간 실제 제보자 중 날씨를 알려준 사람들의 평균 = 지금 현장 분위기
+  const recent = posts.filter((p) => !p.isSample && now - p.createdAt < 24 * 60 * 60000);
+  const scored = recent.flatMap((p) => (p.weather ? [weatherOf(p.weather).score] : []));
+  const mood = scored.length ? scoreToWeather(scored.reduce((a, b) => a + b, 0) / scored.length) : null;
 
-  function submitPost() {
+  async function submitPost() {
     if (!draft.title.trim() || !draft.body.trim()) return;
+    const id = crypto.randomUUID();
     createPost({
-        id: crypto.randomUUID(),
+        id,
         category: draft.category,
         grade: draft.grade,
         weather: myWeather,
-        nickname: randomNickname(draft.grade),
+        nickname: await threadNickname(id),
         title: draft.title.trim(),
         body: draft.body.trim(),
         createdAt: Date.now(),
@@ -82,44 +80,40 @@ function BoardView() {
     setCategory("전체");
   }
 
-  function sendSun(id: string) {
+  async function sendSun(id: string) {
     if (sunned.includes(id)) return;
     setSunned((prev) => [...prev, id]);
-    sendSunshine(id);
+    if (!(await sendSunshine(id))) showToast("이 글에는 이미 햇살을 보냈어요.");
   }
 
-  function addComment() {
+  async function addComment() {
     const text = comment.trim();
     if (!text || !openId) return;
+    setComment("");
     addPostComment(openId, {
       id: crypto.randomUUID(),
-      nickname: randomNickname(myGrade),
+      nickname: await threadNickname(openId),
       body: text,
       createdAt: Date.now(),
       weather: myWeather,
     });
-    setComment("");
   }
 
   return (
     <>
       <Header title="현장 제보" />
 
-      {mood && (
-        <section className="mb-4 flex items-center gap-4 rounded-3xl bg-gradient-to-r from-slate-700 to-sky-700 p-5 text-white">
-          <span className="text-5xl">{mood.emoji}</span>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs text-white/70">지금 현장 분위기</p>
-            <p className="font-display text-2xl">{mood.label}</p>
-            <p className="truncate text-xs text-white/80">
-              오늘 제보 {recent.length}건
-            </p>
-          </div>
-          <button onClick={() => setWriting(true)} className="shrink-0 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-text">
-            📡 제보하기
-          </button>
-        </section>
-      )}
+      <section className="mb-4 flex items-center gap-4 rounded-3xl bg-gradient-to-r from-slate-700 to-sky-700 p-5 text-white">
+        <span className="text-5xl">{mood?.emoji ?? "🛰️"}</span>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-white/70">지금 현장 분위기</p>
+          <p className="font-display text-2xl">{mood?.label ?? "관측 대기"}</p>
+          <p className="truncate text-xs text-white/80">최근 24시간 제보 {recent.length}건</p>
+        </div>
+        <button onClick={() => setWriting(true)} className="shrink-0 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-text">
+          📡 제보하기
+        </button>
+      </section>
 
       <div className="mb-4 flex gap-1.5 overflow-x-auto pb-1">
         {(["전체", ...POST_CATEGORIES] as const).map((c) => (
@@ -157,10 +151,10 @@ function BoardView() {
                       <span className="rounded bg-danger/10 px-1.5 py-0.5 font-semibold text-danger">🌡️ 폭염급 관심</span>
                     )}
                   </p>
-                  <p className="mt-1 font-medium">{p.title}<SampleBadge id={p.id} /></p>
+                  <p className="mt-1 font-medium">{p.title}<SampleBadge show={p.isSample} /></p>
                   <p className="mt-0.5 line-clamp-1 text-sm text-muted">{p.body}</p>
                   <p className="mt-2 flex gap-3 text-xs text-muted">
-                    <span className="truncate">{p.nickname} · {timeAgo(p.createdAt)}</span>
+                    <span className="truncate">{author(p)} · {timeAgo(p.createdAt)}</span>
                     <span className="ml-auto shrink-0">☀️ {p.likes}</span>
                     <span className="shrink-0">💬 {p.comments.length}</span>
                   </p>
@@ -181,11 +175,11 @@ function BoardView() {
             <div className={`mb-4 flex items-center gap-3 rounded-2xl p-3 ${postWeather(open).tint}`}>
               <span className="text-3xl">{postWeather(open).emoji}</span>
               <p className="text-sm">
-                <b>{open.nickname}</b> 님의 오늘 날씨는 <b>{postWeather(open).label}</b>
+                <b>{author(open)}</b> 님의 오늘 날씨는 <b>{postWeather(open).label}</b>
                 <span className="block text-xs text-muted">{timeAgo(open.createdAt)} 제보</span>
               </p>
             </div>
-            <h2 className="text-xl font-bold">{open.title}<SampleBadge id={open.id} /></h2>
+            <h2 className="text-xl font-bold">{open.title}<SampleBadge show={open.isSample} /></h2>
             <p className="mt-3 whitespace-pre-wrap leading-relaxed">{open.body}</p>
             <button
               onClick={() => sendSun(open.id)}
@@ -201,9 +195,12 @@ function BoardView() {
               <ul className="space-y-3">
                 {open.comments.map((c) => (
                   <li key={c.id} className="flex gap-2.5">
-                    <span className="text-lg leading-6">{weatherEmoji(c.weather ?? pseudoWeather(c.id))}</span>
+                    <span className="text-lg leading-6">{weatherEmoji(c.weather)}</span>
                     <div>
-                      <p className="text-xs text-muted">{c.nickname} · {timeAgo(c.createdAt)}<SampleBadge id={c.id} /></p>
+                      <p className={`text-xs ${c.nickname === open.nickname ? "font-semibold text-accent" : "text-muted"}`}>
+                        {displayNickname(c.nickname, open.nickname)} · {timeAgo(c.createdAt)}
+                        <SampleBadge show={c.isSample} />
+                      </p>
                       <p className="mt-0.5 text-sm">{c.body}</p>
                     </div>
                   </li>

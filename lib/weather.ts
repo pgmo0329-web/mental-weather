@@ -24,13 +24,6 @@ export const TAGS = [
   "취업·인턴", "통학", "돈", "건강", "날씨", "그냥", "기타",
 ] as const;
 
-export const SLOTS = [
-  { key: "morning", label: "아침", time: "08:00" },
-  { key: "noon", label: "점심", time: "12:00" },
-  { key: "evening", label: "저녁", time: "18:00" },
-] as const;
-export type SlotKey = (typeof SLOTS)[number]["key"];
-
 // 학년별 집계가 이 숫자보다 적으면 익명 보호를 위해 가린다
 export const MIN_SAMPLE = 5;
 
@@ -45,7 +38,8 @@ export const EVENT_KINDS = [
 export type EventKind = (typeof EVENT_KINDS)[number]["key"];
 
 export function kindInfo(kind: EventKind) {
-  return EVENT_KINDS.find((k) => k.key === kind)!;
+  // 잘못된 값이 들어와도 화면이 멈추지 않게 '기타'로 보여준다
+  return EVENT_KINDS.find((k) => k.key === kind) ?? EVENT_KINDS[EVENT_KINDS.length - 1];
 }
 
 export function dateKey(d: Date) {
@@ -68,23 +62,19 @@ export function formatDay(key: string) {
   return { md: `${m}/${d}`, dow: DOW[date.getDay()] };
 }
 
-export function randomNickname(grade: Grade | null) {
-  return `${grade ?? "익명"} 관측자 ${Math.floor(Math.random() * 90) + 10}`;
-}
-
 export function weatherOf(key: WeatherKey) {
   return WEATHERS.find((w) => w.key === key)!;
 }
 
-export function weatherEmoji(key: WeatherKey | null | undefined) {
-  return WEATHERS.find((w) => w.key === key)?.emoji ?? "🛰️";
+// 날씨를 안 알려준 사람의 글·댓글
+export const NO_WEATHER = { key: "none", tint: "bg-panel-2", emoji: "🛰️", label: "미관측" } as const;
+
+export function weatherOrNone(key: WeatherKey | null | undefined) {
+  return WEATHERS.find((w) => w.key === key) ?? NO_WEATHER;
 }
 
-// 예시 데이터처럼 날씨 정보가 없는 글은 id로 고정된 날씨를 붙인다
-export function pseudoWeather(id: string): WeatherKey {
-  let h = 0;
-  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return WEATHERS[h % WEATHERS.length].key;
+export function weatherEmoji(key: WeatherKey | null | undefined) {
+  return WEATHERS.find((w) => w.key === key)?.emoji ?? "🛰️";
 }
 
 export function timeAgo(ts: number) {

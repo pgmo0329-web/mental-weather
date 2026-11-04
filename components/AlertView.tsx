@@ -4,15 +4,27 @@ import Link from "next/link";
 import { useState } from "react";
 import ClientOnly from "@/components/ClientOnly";
 import { getSavedGrade, getTodayVote } from "@/lib/local";
-import { addAlertComment, alertCommentsStore, reportAlertComment, useStore } from "@/lib/data";
+import {
+  addAlertComment, alertCommentsStore, isOnline, reportAlertComment, threadNickname, useStore,
+} from "@/lib/data";
 import type { Alert } from "@/lib/mock";
-import { GRADES, pseudoWeather, randomNickname, timeAgo, weatherEmoji, type Grade } from "@/lib/weather";
+import { GRADES, timeAgo, weatherEmoji, type Grade } from "@/lib/weather";
 import SampleBadge from "@/components/SampleBadge";
 
 const MAX_LEN = 200;
 const HIDE_AT = 3;
 
 export default function AlertView(props: { alert: Alert }) {
+  // 자동 특보는 아직 없어서, DB 모드에서는 예시 특보를 보여주지 않는다
+  if (isOnline) {
+    return (
+      <section className="rounded-3xl bg-panel p-8 text-center">
+        <p className="text-4xl">🌤️</p>
+        <p className="mt-3 font-semibold">현재 발효 중인 특보가 없어요</p>
+        <Link href="/" className="mt-4 inline-block text-sm text-accent">오늘 예보로 돌아가기</Link>
+      </section>
+    );
+  }
   return (
     <ClientOnly>
       <AlertBody {...props} />
@@ -26,19 +38,20 @@ function AlertBody({ alert }: { alert: Alert }) {
   const [grade, setGrade] = useState<Grade | null>(getSavedGrade);
   const [reported, setReported] = useState<string[]>([]);
 
-  function post() {
+  async function post() {
     const text = body.trim();
     if (!text) return;
+    setBody("");
+    const nick = await threadNickname(alert.id);
     addAlertComment({
       id: crypto.randomUUID(),
       alertId: alert.id,
-      nickname: randomNickname(grade),
+      nickname: grade ? `${grade} ${nick}` : nick,
       body: text,
       createdAt: Date.now(),
       reports: 0,
       weather: getTodayVote()?.weather,
     });
-    setBody("");
   }
 
   function report(id: string) {
@@ -75,7 +88,7 @@ function AlertBody({ alert }: { alert: Alert }) {
             ) : (
               <li key={c.id} className="rounded-2xl bg-panel px-4 py-3">
                 <div className="flex items-center justify-between text-xs text-muted">
-                  <span>{weatherEmoji(c.weather ?? pseudoWeather(c.id))} {c.nickname} · {timeAgo(c.createdAt)}<SampleBadge id={c.id} /></span>
+                  <span>{weatherEmoji(c.weather)} {c.nickname} · {timeAgo(c.createdAt)}<SampleBadge show={c.isSample} /></span>
                   <button onClick={() => report(c.id)} className={reported.includes(c.id) ? "text-danger" : ""}>
                     {reported.includes(c.id) ? "신고됨" : "신고"}
                   </button>

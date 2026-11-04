@@ -1,45 +1,44 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ClientOnly from "@/components/ClientOnly";
 import Header from "@/components/Header";
+import SampleBadge from "@/components/SampleBadge";
 import Sheet from "@/components/Sheet";
 import {
-  eventsStore, isOnline, revisionsStore, saveEvent, statsStore, useStore, type Revision, type StoredEvent,
+  dailyStore, eventsStore, isOnline, predictionKey, predictionStore, requestPredictions, revisionsStore, saveEvent,
+  statsStore, useStore, type Prediction, type Revision, type StoredEvent,
 } from "@/lib/data";
 import { getSavedGrade } from "@/lib/local";
-import { pastScores, TODAY_FORECASTS } from "@/lib/mock";
+import { TODAY_FORECAST } from "@/lib/mock";
+import { keyToDate, useTodayKey } from "@/lib/useToday";
 import {
   addDays, dateKey, EVENT_KINDS, formatDay, GRADES, kindInfo, scoreToWeather, timeAgo,
   type EventKind, type Grade,
 } from "@/lib/weather";
-import SampleBadge from "@/components/SampleBadge";
 
 type GradeView = Grade | "전체";
 type FormState = { title: string; date: string; kind: EventKind; grades: Grade[]; time: string; place: string };
 
-const BASE_SCORE = 70;
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+const METHOD_LABEL: Record<Prediction["method"], string> = {
+  stats: "지난 기록 통계로 예측",
+  ml: "머신러닝 모델로 예측",
+  local: "일정 가중치로 예측 (예시 모드)",
+};
 
 function appliesTo(ev: StoredEvent, grade: GradeView) {
   return grade === "전체" || ev.grades.length === 0 || ev.grades.includes(grade);
 }
 
-// 일정 무게만큼 감점. 전체 보기에선 특정 학년 일정은 절반만 반영한다
-function predict(events: StoredEvent[], date: string, grade: GradeView) {
-  let score = BASE_SCORE;
-  for (const ev of events) {
-    if (ev.deleted || ev.date !== date || !appliesTo(ev, grade)) continue;
-    const w = kindInfo(ev.kind).weight;
-    score -= grade === "전체" && ev.grades.length > 0 ? w / 2 : w;
+// "3학년 시험 날 평균 -18점 (관측 6일)" 같은 예측 근거 한 줄
+function basisText(p: Prediction, grade: GradeView) {
+  if (p.kind && p.effect !== 0) {
+    const sign = p.effect > 0 ? "+" : "−";
+    const seen = p.days > 0 ? `관측 ${p.days}일` : "기본값";
+    return `${grade} ${kindInfo(p.kind).label} 날 평균 ${sign}${Math.abs(p.effect)}점 (${seen})`;
   }
-  return Math.max(0, Math.min(100, Math.round(score)));
-}
-
-function startOfToday() {
-  const t = new Date();
-  t.setHours(0, 0, 0, 0);
-  return t;
+  return `${grade} 최근 4주 평균 ${p.base}점 기준`;
 }
 
 function eventMeta(ev: StoredEvent) {
@@ -64,11 +63,13 @@ export default function CalendarPage() {
 }
 
 function CalendarView() {
-  const [today] = useState(startOfToday);
-  const todayKey = dateKey(today);
+  const todayKey = useTodayKey();
+  const today = useMemo(() => keyToDate(todayKey), [todayKey]);
   const events = useStore(eventsStore);
   const revisions = useStore(revisionsStore);
   const stats = useStore(statsStore);
+  const daily = useStore(dailyStore);
+  const predictions = useStore(predictionStore);
   const [gradeView, setGradeView] = useState<GradeView>(() => getSavedGrade() ?? "전체");
   const [month, setMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [selected, setSelected] = useState(todayKey);
@@ -86,18 +87,49 @@ function CalendarView() {
     return map;
   }, [events, gradeView]);
 
-  // 지난 날과 오늘(전체 보기)은 실제 관측, 앞으로는 일정으로 예측. 관측이 부족하면 null
-  const week = useMemo(() => {
-    const past: Record<string, number | null> = isOnline ? (stats?.daily ?? {}) : pastScores(today);
-    const todayScore = isOnline ? (stats?.overallScore ?? null) : TODAY_FORECASTS[TODAY_FORECASTS.length - 1].overallScore;
-    return Array.from({ length: 7 }, (_, i) => {
-      const offset = i - 3;
-      const key = dateKey(addDays(today, offset));
-      const score: number | null =
-        offset < 0 ? (past[key] ?? null) : offset === 0 && gradeView === "전체" ? todayScore : predict(events, key, gradeView);
-      return { key, offset, score };
-    });
-  }, [today, events, gradeView, stats]);
+  // 지난 날: 자정에 저장된 기록 / 오늘: 실시간 관측 / 앞으로: 지난 기록으로 예측. 관측이 부족하면 null
+  const pastScore = useMemo(() => {
+    const map = new Map<string, number | null>();
+    for (const r of daily) if (r.grade === gradeView) map.set(r.day, r.score);
+    return map;
+  }, [daily, gradeView]);
+
+  const todayScore = isOnline
+    ? gradeView === "전체"
+      ? (stats?.overallScore ?? null)
+      : (stats?.byGrade.find((g) => g.grade === gradeView)?.score ?? null)
+    : gradeView === "전체"
+      ? TODAY_FORECAST.overallScore
+      : (TODAY_FORECAST.byGrade.find((g) => g.grade === gradeView)?.score ?? null);
+
+  // 예측이 필요한 날: 주간 예보의 앞날 + 이번 달 달력에서 일정이 있는 앞날
+  const futureKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (let i = 1; i <= 3; i++) keys.add(dateKey(addDays(today, i)));
+    for (const ev of events) {
+      if (!ev.deleted && ev.date > todayKey && appliesTo(ev, gradeView) && ev.date.slice(0, 7) === dateKey(month).slice(0, 7)) {
+        keys.add(ev.date);
+      }
+    }
+    return [...keys].sort();
+  }, [today, todayKey, events, gradeView, month]);
+
+  useEffect(() => {
+    requestPredictions(gradeView, futureKeys);
+  }, [gradeView, futureKeys, predictions]);
+
+  function scoreOf(key: string): { score: number | null; prediction?: Prediction } {
+    if (key < todayKey) return { score: pastScore.get(key) ?? null };
+    if (key === todayKey) return { score: todayScore };
+    const p = predictions[predictionKey(gradeView, key)];
+    return { score: p?.score ?? null, prediction: p };
+  }
+
+  const week = Array.from({ length: 7 }, (_, i) => {
+    const offset = i - 3;
+    const key = dateKey(addDays(today, offset));
+    return { key, offset, ...scoreOf(key) };
+  });
 
   const cells = useMemo(() => {
     const lead = month.getDay();
@@ -152,7 +184,8 @@ function CalendarView() {
   }
 
   function revert(rev: Revision) {
-    saveEvent(rev.snapshot, "되돌림");
+    // 기록 안의 id 대신 그 기록이 속한 일정 id 로 되돌린다
+    saveEvent({ ...rev.snapshot, id: rev.eventId, deleted: rev.snapshot.deleted }, "되돌림");
     setHistoryId(null);
   }
 
@@ -163,6 +196,7 @@ function CalendarView() {
   const dayEvents = byDate.get(selected) ?? [];
   const [, selM, selD] = selected.split("-").map(Number);
   const historyEvent = events.find((e) => e.id === historyId);
+  const selectedPrediction = selected > todayKey ? predictions[predictionKey(gradeView, selected)] : undefined;
 
   return (
     <>
@@ -185,7 +219,7 @@ function CalendarView() {
       <section className="mb-4 rounded-3xl bg-panel p-5">
         <div className="mb-3">
           <h2 className="font-display text-xl">주간 예보</h2>
-          <p className="mt-0.5 text-xs text-muted">시험은 폭풍, 과제는 비. 일정이 날씨를 만들어요</p>
+          <p className="mt-0.5 text-xs text-muted">지난날은 실제 기록, 오늘은 실시간, 앞으로는 지난 기록으로 예측해요</p>
         </div>
         <div className="grid grid-cols-7 gap-1">
           {week.map((d) => {
@@ -211,6 +245,12 @@ function CalendarView() {
             );
           })}
         </div>
+        {selectedPrediction && (
+          <p className="mt-3 rounded-2xl bg-panel-2 px-3 py-2 text-xs text-muted">
+            <b className="text-text">{formatDay(selected).md} 예상 {selectedPrediction.score}점</b> ·{" "}
+            {basisText(selectedPrediction, gradeView)} · {METHOD_LABEL[selectedPrediction.method]}
+          </p>
+        )}
       </section>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] md:items-start">
@@ -247,11 +287,16 @@ function CalendarView() {
                   >
                     {c.day}
                   </span>
-                  {evs.length > 0 && (
-                    <span className="mt-0.5 text-base leading-none md:absolute md:right-1 md:top-1 md:text-sm">
-                      {scoreToWeather(predict(events, c.key, gradeView)).emoji}
-                    </span>
-                  )}
+                  {(() => {
+                    // 지난날은 기록이 있으면, 앞날은 일정이 있으면 날씨를 띄운다
+                    const s = scoreOf(c.key).score;
+                    if (s === null || (c.key > todayKey && evs.length === 0)) return null;
+                    return (
+                      <span className="mt-0.5 text-base leading-none md:absolute md:right-1 md:top-1 md:text-sm">
+                        {scoreToWeather(s).emoji}
+                      </span>
+                    );
+                  })()}
                   <span className="mt-1 hidden space-y-0.5 md:block">
                     {evs.slice(0, 2).map((e) => (
                       <span key={e.id} className={`block truncate rounded px-1 text-left text-[11px] ${kindInfo(e.kind).chip}`}>
@@ -259,6 +304,7 @@ function CalendarView() {
                           <b className="mr-1 font-bold">{gradePrefix(e)}</b>
                         )}
                         {e.title}
+                        {e.isSample && <span className="ml-1 opacity-60">·샘플</span>}
                       </span>
                     ))}
                     {evs.length > 2 && <span className="block text-left text-[11px] text-muted">+{evs.length - 2}</span>}
@@ -268,7 +314,7 @@ function CalendarView() {
             })}
           </div>
           <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1 border-t border-line pt-3">
-            <span className="w-full text-xs text-muted">일정이 있는 날엔 그날 예상 날씨가 떠요</span>
+            <span className="w-full text-xs text-muted">지난날은 기록된 날씨, 앞날은 일정이 있으면 예상 날씨가 떠요</span>
             {EVENT_KINDS.map((k) => (
               <span key={k.key} className="flex items-center gap-1 text-xs text-muted">
                 <span>{k.icon}</span>
@@ -300,7 +346,7 @@ function CalendarView() {
                   <span className="w-6 shrink-0 pt-0.5 text-center text-lg">{kindInfo(ev.kind).icon}</span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="font-medium">{ev.title}<SampleBadge id={ev.id} /></p>
+                      <p className="font-medium">{ev.title}<SampleBadge show={ev.isSample} /></p>
                       <span
                         className={`shrink-0 rounded-md px-1.5 py-0.5 text-xs font-semibold ${
                           ev.grades.length ? "bg-accent/10 text-accent" : "bg-panel-2 text-muted"
@@ -332,6 +378,7 @@ function CalendarView() {
               <span className="w-10 shrink-0 text-xs text-muted">{r.action}</span>
               <span className={`min-w-0 flex-1 truncate ${r.snapshot.deleted ? "text-muted line-through" : ""}`}>
                 {r.snapshot.title}
+                <SampleBadge show={r.snapshot.isSample} />
               </span>
               {r.snapshot.deleted && (
                 <button onClick={() => setHistoryId(r.eventId)} className="text-xs font-semibold text-accent">복구</button>
@@ -424,7 +471,10 @@ function CalendarView() {
                     <button onClick={() => revert(r)} className="font-semibold text-accent">이 버전으로 되돌리기</button>
                   )}
                 </div>
-                <p className={`mt-1 font-medium ${r.snapshot.deleted ? "text-muted line-through" : ""}`}>{r.snapshot.title}</p>
+                <p className={`mt-1 font-medium ${r.snapshot.deleted ? "text-muted line-through" : ""}`}>
+                  {r.snapshot.title}
+                  <SampleBadge show={r.snapshot.isSample} />
+                </p>
                 <p className="text-sm text-muted">
                   {r.snapshot.date} · {eventMeta(r.snapshot)} · {gradeLabel(r.snapshot)}
                 </p>
