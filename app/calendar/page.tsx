@@ -13,12 +13,12 @@ import { getSavedGrade } from "@/lib/local";
 import { TODAY_FORECAST } from "@/lib/mock";
 import { keyToDate, useTodayKey } from "@/lib/useToday";
 import {
-  addDays, dateKey, EVENT_KINDS, formatDay, GRADES, kindInfo, scoreToWeather, timeAgo,
-  type EventKind, type Grade,
+  addDays, dateKey, EVENT_KINDS, formatDay, GRADES, isPersonal, kindInfo, PERSONAL, scoreToWeather, timeAgo,
+  type EventKind, type EventTarget, type Grade,
 } from "@/lib/weather";
 
-type GradeView = Grade | "전체";
-type FormState = { title: string; date: string; kind: EventKind; grades: Grade[]; time: string; place: string };
+type GradeView = Grade | "전체" | typeof PERSONAL;
+type FormState = { title: string; date: string; kind: EventKind; grades: EventTarget[]; time: string; place: string };
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const METHOD_LABEL: Record<Prediction["method"], string> = {
@@ -27,12 +27,14 @@ const METHOD_LABEL: Record<Prediction["method"], string> = {
   local: "일정 가중치로 예측 (예시 모드)",
 };
 
+// 규봉이 탭에는 개인 일정만, 나머지 탭에는 개인 일정을 뺀 학과 일정만 보여준다
 function appliesTo(ev: StoredEvent, grade: GradeView) {
+  if (grade === PERSONAL || isPersonal(ev)) return grade === PERSONAL && isPersonal(ev);
   return grade === "전체" || ev.grades.length === 0 || ev.grades.includes(grade);
 }
 
 // "3학년 시험 날 평균 -18점 (관측 6일)" 같은 예측 근거 한 줄
-function basisText(p: Prediction, grade: GradeView) {
+function basisText(p: Prediction, grade: Grade | "전체") {
   if (p.kind && p.effect !== 0) {
     const sign = p.effect > 0 ? "+" : "−";
     const seen = p.days > 0 ? `관측 ${p.days}일` : "기본값";
@@ -76,6 +78,7 @@ function CalendarView() {
   const [form, setForm] = useState<FormState | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [historyId, setHistoryId] = useState<string | null>(null);
+  const personal = gradeView === PERSONAL;
 
   const byDate = useMemo(() => {
     const map = new Map<string, StoredEvent[]>();
@@ -115,10 +118,12 @@ function CalendarView() {
   }, [today, todayKey, events, gradeView, month]);
 
   useEffect(() => {
-    requestPredictions(gradeView, futureKeys);
+    if (gradeView !== PERSONAL) requestPredictions(gradeView, futureKeys);
   }, [gradeView, futureKeys, predictions]);
 
+  // 개인 달력은 집계·예측이 없어서 날씨를 띄우지 않는다
   function scoreOf(key: string): { score: number | null; prediction?: Prediction } {
+    if (gradeView === PERSONAL) return { score: null };
     if (key < todayKey) return { score: pastScore.get(key) ?? null };
     if (key === todayKey) return { score: todayScore };
     const p = predictions[predictionKey(gradeView, key)];
@@ -196,14 +201,15 @@ function CalendarView() {
   const dayEvents = byDate.get(selected) ?? [];
   const [, selM, selD] = selected.split("-").map(Number);
   const historyEvent = events.find((e) => e.id === historyId);
-  const selectedPrediction = selected > todayKey ? predictions[predictionKey(gradeView, selected)] : undefined;
+  const selectedPrediction =
+    gradeView !== PERSONAL && selected > todayKey ? predictions[predictionKey(gradeView, selected)] : undefined;
 
   return (
     <>
       <Header title="예보 달력" />
 
       <div className="mb-4 flex gap-1 overflow-x-auto rounded-full bg-panel p-1">
-        {(["전체", ...GRADES] as const).map((g) => (
+        {(["전체", ...GRADES, PERSONAL] as const).map((g) => (
           <button
             key={g}
             onClick={() => setGradeView(g)}
@@ -218,8 +224,12 @@ function CalendarView() {
 
       <section className="mb-4 rounded-3xl bg-panel p-5">
         <div className="mb-3">
-          <h2 className="font-display text-xl">주간 예보</h2>
-          <p className="mt-0.5 text-xs text-muted">지난날은 실제 기록, 오늘은 실시간, 앞으로는 지난 기록으로 예측해요</p>
+          <h2 className="font-display text-xl">{personal ? "이번 주 일정" : "주간 예보"}</h2>
+          <p className="mt-0.5 text-xs text-muted">
+            {personal
+              ? "규봉이 개인 일정만 모아 봐요. 학과 날씨 집계와 예측에는 들어가지 않아요"
+              : "지난날은 실제 기록, 오늘은 실시간, 앞으로는 지난 기록으로 예측해요"}
+          </p>
         </div>
         <div className="grid grid-cols-7 gap-1">
           {week.map((d) => {
@@ -236,8 +246,8 @@ function CalendarView() {
                   {d.offset === 0 ? "오늘" : dow}
                 </span>
                 <span className="text-[11px] text-muted">{md}</span>
-                <span className="my-1 text-2xl">{w.emoji}</span>
-                <span className="text-xs font-medium">{d.score ?? "-"}</span>
+                <span className="my-1 text-2xl">{personal ? (evs[0] ? kindInfo(evs[0].kind).icon : "·") : w.emoji}</span>
+                <span className="text-xs font-medium">{personal ? (evs.length ? `${evs.length}건` : "") : (d.score ?? "-")}</span>
                 <span className="mt-1 h-4 text-xs leading-4">
                   {evs.slice(0, 2).map((e) => kindInfo(e.kind).icon).join("")}
                 </span>
@@ -245,7 +255,7 @@ function CalendarView() {
             );
           })}
         </div>
-        {selectedPrediction && (
+        {selectedPrediction && gradeView !== PERSONAL && (
           <p className="mt-3 rounded-2xl bg-panel-2 px-3 py-2 text-xs text-muted">
             <b className="text-text">{formatDay(selected).md} 예상 {selectedPrediction.score}점</b> ·{" "}
             {basisText(selectedPrediction, gradeView)} · {METHOD_LABEL[selectedPrediction.method]}
@@ -314,7 +324,9 @@ function CalendarView() {
             })}
           </div>
           <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1 border-t border-line pt-3">
-            <span className="w-full text-xs text-muted">지난날은 기록된 날씨, 앞날은 일정이 있으면 예상 날씨가 떠요</span>
+            {!personal && (
+              <span className="w-full text-xs text-muted">지난날은 기록된 날씨, 앞날은 일정이 있으면 예상 날씨가 떠요</span>
+            )}
             {EVENT_KINDS.map((k) => (
               <span key={k.key} className="flex items-center gap-1 text-xs text-muted">
                 <span>{k.icon}</span>
@@ -432,20 +444,24 @@ function CalendarView() {
               placeholder="장소 (선택, 예: 공학관 101호)"
               className="w-full rounded-xl bg-panel-2 px-4 py-3 outline-none focus:ring-2 focus:ring-accent"
             />
-            <div>
-              <p className="mb-2 text-sm text-muted">대상 학년 (선택 안 하면 전체)</p>
-              <div className="flex flex-wrap gap-1.5">
-                {GRADES.map((g) => (
-                  <button
-                    key={g}
-                    onClick={() => toggleFormGrade(g)}
-                    className={`rounded-full px-3 py-1.5 text-sm ${form.grades.includes(g) ? "bg-accent text-white" : "bg-panel-2 text-muted"}`}
-                  >
-                    {g}
-                  </button>
-                ))}
+            {isPersonal(form) ? (
+              <p className="rounded-xl bg-panel-2 px-4 py-3 text-sm text-muted">{PERSONAL} 개인 일정으로 저장돼요</p>
+            ) : (
+              <div>
+                <p className="mb-2 text-sm text-muted">대상 학년 (선택 안 하면 전체)</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {GRADES.map((g) => (
+                    <button
+                      key={g}
+                      onClick={() => toggleFormGrade(g)}
+                      className={`rounded-full px-3 py-1.5 text-sm ${form.grades.includes(g) ? "bg-accent text-white" : "bg-panel-2 text-muted"}`}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
             <button
               onClick={saveForm}
               disabled={!form.title.trim() || !form.date}

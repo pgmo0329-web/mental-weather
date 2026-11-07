@@ -19,6 +19,14 @@ export function scoreToWeather(score: number) {
 export const GRADES = ["1학년", "2학년", "3학년", "4학년", "초과학기"] as const;
 export type Grade = (typeof GRADES)[number];
 
+// 개인 달력. 일정의 grades 가 ["규봉이"] 이면 개인 일정이고, 학년·전체 보기와 집계·예측에서 빠진다
+export const PERSONAL = "규봉이";
+export type EventTarget = Grade | typeof PERSONAL;
+
+export function isPersonal(ev: { grades: readonly string[] }) {
+  return ev.grades.includes(PERSONAL);
+}
+
 export const TAGS = [
   "과제", "시험", "팀플", "수면부족", "술병", "코딩에러", "연애", "알바",
   "취업·인턴", "통학", "돈", "건강", "날씨", "그냥", "기타",

@@ -12,7 +12,8 @@
 2. `supabase/schema.sql` 내용을 통째로 붙여넣고 **Run**.
 3. 이어서 `supabase/002_live_stats.sql` 도 **Run**. (실시간 관측 집계 함수)
 4. 이어서 `supabase/003_daily_and_safety.sql` 도 **Run**. (자정 기록, 예측, 쓰기 함수, 악용 방지. `pg_cron` 을 켜고 매일 00:05 에 전날을 마감하도록 예약한다)
-5. 샘플이 필요하면 `supabase/sample_data.sql` 도 **Run**. (`python3 ml/generate_sample.py` 로 다시 만들 수 있다. 다시 실행하면 이전 샘플을 지우고 새로 넣는다)
+5. 이어서 `supabase/004_personal_calendar.sql` 도 **Run**. (예보 달력의 '규봉이' 개인 달력. 개인 일정은 집계·예측에서 뺀다)
+6. 샘플이 필요하면 `supabase/sample_data.sql` 도 **Run**. (`python3 ml/generate_sample.py` 로 다시 만들 수 있다. 다시 실행하면 이전 샘플을 지우고 새로 넣는다)
 
 > 이미 쓰던 DB 의 예시·테스트 데이터를 모두 지우려면 `supabase/reset_sample.sql` 을 한 번 실행한다. 되돌릴 수 없다.
 

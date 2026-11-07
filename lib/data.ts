@@ -9,7 +9,7 @@ import {
   type AlertComment, type CalEvent, type DailyRow, type Post, type PostCategory,
 } from "./mock";
 import { supabase } from "./supabase";
-import { kindInfo, type EventKind, type Grade, type WeatherKey } from "./weather";
+import { isPersonal, kindInfo, type EventKind, type EventTarget, type Grade, type WeatherKey } from "./weather";
 
 export const isOnline = supabase !== null;
 
@@ -181,7 +181,7 @@ export async function threadNickname(threadId: string) {
 // ---- DB 행 ↔ 화면 데이터 변환
 
 type EventRow = {
-  id: string; title: string; date: string; kind: EventKind; grades: Grade[] | null;
+  id: string; title: string; date: string; kind: EventKind; grades: EventTarget[] | null;
   time: string | null; place: string | null; deleted: boolean; is_sample?: boolean;
 };
 
@@ -448,7 +448,7 @@ function localPredict(grade: Grade | "전체", date: string): Prediction {
   let score = 70;
   let top: { kind: EventKind; effect: number } | null = null;
   for (const ev of eventsStore.get()) {
-    if (ev.deleted || ev.date !== date) continue;
+    if (ev.deleted || ev.date !== date || isPersonal(ev)) continue;
     if (grade !== "전체" && ev.grades.length > 0 && !ev.grades.includes(grade)) continue;
     const effect = -kindInfo(ev.kind).weight;
     score += effect;

@@ -1,5 +1,5 @@
 // DB 연결 없이 실행할 때 쓰는 예시 데이터와 공용 타입. 예시 데이터는 화면에 '샘플'로 표시된다.
-import { addDays, dateKey, GRADES, type EventKind, type Grade, type WeatherKey } from "./weather";
+import { addDays, dateKey, GRADES, type EventKind, type EventTarget, type Grade, type WeatherKey } from "./weather";
 
 export type GradeStat = { grade: Grade; score: number; count: number };
 
@@ -37,7 +37,7 @@ export type CalEvent = {
   title: string;
   date: string;
   kind: EventKind;
-  grades: Grade[]; // 비어 있으면 전체 학년
+  grades: EventTarget[]; // 비어 있으면 전체 학년, ["규봉이"] 이면 개인 일정
   time?: string;
   place?: string;
   isSample?: boolean;

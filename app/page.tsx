@@ -13,7 +13,7 @@ import { getSavedGrade, getTodayVote } from "@/lib/local";
 import { CATEGORY_LABEL, TODAY_ALERTS, TODAY_FORECAST } from "@/lib/mock";
 import { keyToDate, useTodayKey } from "@/lib/useToday";
 import {
-  addDays, dateKey, GRADES, kindInfo, MIN_SAMPLE, scoreToWeather, timeAgo, weatherEmoji,
+  addDays, dateKey, GRADES, isPersonal, kindInfo, MIN_SAMPLE, scoreToWeather, timeAgo, weatherEmoji,
 } from "@/lib/weather";
 import SampleBadge from "@/components/SampleBadge";
 
@@ -98,7 +98,7 @@ function TodayView() {
   const from = dateKey(today);
   const to = dateKey(addDays(today, 7));
   const upcoming = events
-    .filter((e) => !e.deleted && e.date >= from && e.date <= to)
+    .filter((e) => !e.deleted && !isPersonal(e) && e.date >= from && e.date <= to)
     .filter((e) => !myGrade || e.grades.length === 0 || e.grades.includes(myGrade))
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, 5);
